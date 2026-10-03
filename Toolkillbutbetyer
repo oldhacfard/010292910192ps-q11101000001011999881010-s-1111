@@ -1,0 +1,1149 @@
+--[[
+    KAIOD ULTRA v2
+    ✅ Bug Fix: drag, ripple, hover, touch, animasyon çakışması
+    ✅ Notification sistemi (slide-in + stack + otomatik dismiss)
+    ✅ Mobile/Touch desteği
+    ✅ Kapatma ve minimize butonu
+]]
+
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local SoundService = game:GetService("SoundService")
+local plr = Players.LocalPlayer
+
+-- ==================== STATE ====================
+local State = {
+    isDragging = false,
+    dragStart = nil,
+    frameStart = nil,
+    touchMode = false,
+    currentTarget = nil,
+    busy = false,
+    minimized = false,
+    strokeAnimating = false,
+    highlight = nil,
+}
+
+-- ==================== NOTIFICATION SİSTEMİ ====================
+local notifGui = Instance.new("ScreenGui")
+notifGui.Name = "KAIOD_Notifs"
+notifGui.ResetOnSpawn = false
+notifGui.IgnoreGuiInset = true
+notifGui.DisplayOrder = 999
+notifGui.Parent = plr:WaitForChild("PlayerGui")
+
+local notifContainer = Instance.new("Frame")
+notifContainer.Size = UDim2.new(0, 300, 1, -40)
+notifContainer.Position = UDim2.new(1, -320, 0, 20)
+notifContainer.BackgroundTransparency = 1
+notifContainer.Parent = notifGui
+
+local notifLayout = Instance.new("UIListLayout")
+notifLayout.SortOrder = Enum.SortOrder.LayoutOrder
+notifLayout.Padding = UDim.new(0, 8)
+notifLayout.VerticalAlignment = Enum.VerticalAlignment.Top
+notifLayout.Parent = notifContainer
+
+local notifActive = 0
+
+local NOTIF_STYLES = {
+    success = { Color3.fromRGB(60, 220, 100), "✅" },
+    error   = { Color3.fromRGB(255, 80, 80), "❌" },
+    warning = { Color3.fromRGB(255, 180, 60), "⚠️" },
+    info    = { Color3.fromRGB(100, 160, 255), "ℹ️" },
+    kill    = { Color3.fromRGB(255, 60, 120), "💀" },
+}
+
+local function Notify(title, message, notifType, duration)
+    notifType = notifType or "info"
+    duration = duration or 3
+    local style = NOTIF_STYLES[notifType] or NOTIF_STYLES.info
+    local accent = style[1]
+    local icon = style[2]
+    
+    -- Container
+    local notif = Instance.new("Frame")
+    notif.Size = UDim2.new(1, 0, 0, 70)
+    notif.BackgroundColor3 = Color3.fromRGB(18, 14, 30)
+    notif.BackgroundTransparency = 0.05
+    notif.BorderSizePixel = 0
+    notif.Position = UDim2.new(1, 0, 0, 0)
+    notif.Parent = notifContainer
+    
+    local nCorner = Instance.new("UICorner")
+    nCorner.CornerRadius = UDim.new(0, 10)
+    nCorner.Parent = notif
+    
+    local nStroke = Instance.new("UIStroke")
+    nStroke.Color = accent
+    nStroke.Thickness = 1.5
+    nStroke.Transparency = 0.3
+    nStroke.Parent = notif
+    
+    -- Accent bar (sol taraf)
+    local accentBar = Instance.new("Frame")
+    accentBar.Size = UDim2.new(0, 4, 1, -12)
+    accentBar.Position = UDim2.new(0, 0, 0, 6)
+    accentBar.BackgroundColor3 = accent
+    accentBar.BorderSizePixel = 0
+    accentBar.Parent = notif
+    
+    local abCorner = Instance.new("UICorner")
+    abCorner.CornerRadius = UDim.new(0, 2)
+    abCorner.Parent = accentBar
+    
+    -- Icon
+    local iconLbl = Instance.new("TextLabel")
+    iconLbl.Size = UDim2.new(0, 30, 0, 30)
+    iconLbl.Position = UDim2.new(0, 12, 0, 12)
+    iconLbl.BackgroundTransparency = 1
+    iconLbl.Text = icon
+    iconLbl.TextSize = 20
+    iconLbl.Font = Enum.Font.GothamBold
+    iconLbl.Parent = notif
+    
+    -- Title
+    local titleLbl = Instance.new("TextLabel")
+    titleLbl.Size = UDim2.new(1, -55, 0, 18)
+    titleLbl.Position = UDim2.new(0, 45, 0, 10)
+    titleLbl.BackgroundTransparency = 1
+    titleLbl.Text = title
+    titleLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+    titleLbl.Font = Enum.Font.GothamBold
+    titleLbl.TextSize = 13
+    titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+    titleLbl.TextTruncate = Enum.TextTruncate.AtEnd
+    titleLbl.Parent = notif
+    
+    -- Message
+    local msgLbl = Instance.new("TextLabel")
+    msgLbl.Size = UDim2.new(1, -55, 0, 30)
+    msgLbl.Position = UDim2.new(0, 45, 0, 30)
+    msgLbl.BackgroundTransparency = 1
+    msgLbl.Text = message
+    msgLbl.TextColor3 = Color3.fromRGB(200, 195, 220)
+    msgLbl.Font = Enum.Font.Gotham
+    msgLbl.TextSize = 11
+    msgLbl.TextWrapped = true
+    msgLbl.TextXAlignment = Enum.TextXAlignment.Left
+    msgLbl.TextYAlignment = Enum.TextYAlignment.Top
+    msgLbl.Parent = notif
+    
+    -- Timer bar
+    local timerBar = Instance.new("Frame")
+    timerBar.Size = UDim2.new(1, -20, 0, 3)
+    timerBar.Position = UDim2.new(0, 10, 1, -8)
+    timerBar.BackgroundColor3 = accent
+    timerBar.BorderSizePixel = 0
+    timerBar.Parent = notif
+    
+    local tbCorner2 = Instance.new("UICorner")
+    tbCorner2.CornerRadius = UDim.new(0, 2)
+    tbCorner2.Parent = timerBar
+    
+    -- Slide-in animasyonu
+    notif.Position = UDim2.new(1, 50, 0, 0)
+    notif.BackgroundTransparency = 1
+    TweenService:Create(notif, TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+        Position = UDim2.new(0, 0, 0, 0),
+        BackgroundTransparency = 0.05
+    }):Play()
+    
+    -- Timer bar animasyonu
+    TweenService:Create(timerBar, TweenInfo.new(duration, Enum.EasingStyle.Linear), {
+        Size = UDim2.new(0, 0, 0, 3)
+    }):Play()
+    
+    -- Pulse glow
+    task.spawn(function()
+        task.wait(0.4)
+        TweenService:Create(nStroke, TweenInfo.new(0.4), { Transparency = 0 }):Play()
+        task.wait(0.4)
+        TweenService:Create(nStroke, TweenInfo.new(0.8), { Transparency = 0.5 }):Play()
+    end)
+    
+    -- Otomatik dismiss
+    task.delay(duration, function()
+        if not notif.Parent then return end
+        TweenService:Create(notif, TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {
+            Position = UDim2.new(1, 50, 0, 0),
+            BackgroundTransparency = 1
+        }):Play()
+        task.wait(0.35)
+        if notif.Parent then notif:Destroy() end
+    end)
+end
+
+-- ==================== HELPER ====================
+local function FindPlayer(name)
+    if type(name) ~= "string" or name == "" then return nil end
+    local lower = name:lower()
+    if lower == "random" then
+        local list = {}
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= plr and p.Character then table.insert(list, p) end
+        end
+        if #list == 0 then return nil end
+        return list[math.random(1, #list)]
+    end
+    for _, v in ipairs(Players:GetPlayers()) do
+        if v ~= plr and (v.Name:lower():sub(1, #lower) == lower or
+           v.DisplayName:lower():sub(1, #lower) == lower) then
+            return v
+        end
+    end
+end
+
+local function sendChat(msg)
+    pcall(function()
+        game:GetService("TextChatService").TextChannels.RBXGeneral:SendAsync(msg)
+    end)
+end
+
+-- ==================== TOOL ====================
+local function getTool()
+    local char = plr.Character
+    if not char then return nil end
+    local Tool = plr.Backpack:FindFirstChildOfClass("Tool") 
+              or char:FindFirstChildOfClass("Tool")
+    if not Tool then
+        Tool = Instance.new("Tool")
+        Tool.Name = "KAIOD_Tool"
+        Tool.CanBeDropped = false
+        local handle = Instance.new("Part")
+        handle.Name = "Handle"
+        handle.Size = Vector3.new(1, 1, 1)
+        handle.CanCollide = false
+        handle.Massless = true
+        handle.Transparency = 1
+        handle.Parent = Tool
+        Tool.Parent = plr.Backpack
+        task.wait(0.15)
+    end
+    return Tool
+end
+
+-- ==================== ATTACK ====================
+local function beginAttack(targetPlayer)
+    if not targetPlayer then return nil end
+    local char = plr.Character
+    if not char then return nil end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+    local starta = hrp.CFrame
+
+    local tChar = targetPlayer.Character
+    if not tChar then return nil end
+    local tHRP = tChar:FindFirstChild("HumanoidRootPart")
+    if not tHRP then return nil end
+
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum then return nil end
+    pcall(function() hum:UnequipTools() end)
+    
+    local Tool = getTool()
+    if not Tool then return nil end
+    
+    local animate = char:FindFirstChild("Animate")
+    if animate then pcall(function() animate.Disabled = true end) end
+    
+    local newHum = hum:Clone()
+    pcall(function() hum:Destroy() end)
+    newHum.Parent = char
+    Tool.Parent = char
+    pcall(function() newHum:ChangeState(15) end)
+    
+    local handle = Tool:FindFirstChild("Handle")
+    if handle and firetouchinterest then
+        pcall(function()
+            firetouchinterest(tHRP, handle, 0)
+            task.wait()
+            firetouchinterest(tHRP, handle, 1)
+        end)
+    end
+    
+    task.wait(0.5)
+    local myRoot = char:FindFirstChild("HumanoidRootPart")
+    local freshTHRP = tChar:FindFirstChild("HumanoidRootPart")
+    if not myRoot or not freshTHRP then return nil end
+    return starta, freshTHRP, myRoot
+end
+
+-- ==================== HIGHLIGHT ====================
+local function clearHighlight()
+    if State.highlight then
+        pcall(function() State.highlight:Destroy() end)
+        State.highlight = nil
+    end
+end
+
+local function highlightCharacter(char, color)
+    clearHighlight()
+    if not char or not char.Parent then return end
+    local hl = Instance.new("Highlight")
+    hl.FillColor = color or Color3.fromRGB(255, 50, 100)
+    hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+    hl.FillTransparency = 0.6
+    hl.OutlineTransparency = 0
+    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    hl.Parent = char
+    State.highlight = hl
+end
+
+-- ==================== ANA UI ====================
+local gui = Instance.new("ScreenGui")
+gui.Name = "KAIOD_ULTRA_V2"
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.DisplayOrder = 100
+gui.Parent = plr:WaitForChild("PlayerGui")
+
+-- Ana Frame
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 340, 0, 420)
+frame.Position = UDim2.new(0.5, -170, 0.5, -210)
+frame.BackgroundColor3 = Color3.fromRGB(15, 10, 25)
+frame.BorderSizePixel = 0
+frame.Active = true
+frame.ClipsDescendants = true
+frame.Parent = gui
+
+local frameCorner = Instance.new("UICorner")
+frameCorner.CornerRadius = UDim.new(0, 16)
+frameCorner.Parent = frame
+
+local gradient = Instance.new("UIGradient")
+gradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(28, 18, 50)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(15, 10, 30)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(32, 12, 55)),
+})
+gradient.Rotation = 45
+gradient.Parent = frame
+
+local stroke = Instance.new("UIStroke")
+stroke.Color = Color3.fromRGB(140, 60, 255)
+stroke.Thickness = 2
+stroke.Transparency = 0
+stroke.Parent = frame
+
+-- Shadow glow
+local shadow = Instance.new("ImageLabel")
+shadow.Size = UDim2.new(1, 60, 1, 60)
+shadow.Position = UDim2.new(0, -30, 0, -30)
+shadow.BackgroundTransparency = 1
+shadow.Image = "rbxassetid://5028857472"
+shadow.ImageColor3 = Color3.fromRGB(140, 60, 255)
+shadow.ImageTransparency = 0.5
+shadow.ZIndex = -1
+shadow.Parent = frame
+
+-- ===== TITLE BAR =====
+local titleBar = Instance.new("Frame")
+titleBar.Size = UDim2.new(1, 0, 0, 48)
+titleBar.BackgroundTransparency = 1
+titleBar.Parent = frame
+
+local titleIcon = Instance.new("ImageLabel")
+titleIcon.Size = UDim2.new(0, 24, 0, 24)
+titleIcon.Position = UDim2.new(0, 15, 0, 12)
+titleIcon.BackgroundTransparency = 1
+titleIcon.Image = "rbxassetid://6031075931"
+titleIcon.ImageColor3 = Color3.fromRGB(180, 100, 255)
+titleIcon.Parent = titleBar
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -110, 0, 20)
+title.Position = UDim2.new(0, 48, 0, 8)
+title.BackgroundTransparency = 1
+title.Text = "KAIOD ULTRA"
+title.TextColor3 = Color3.fromRGB(220, 180, 255)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 16
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = titleBar
+
+local subtitle = Instance.new("TextLabel")
+subtitle.Size = UDim2.new(1, -110, 0, 14)
+subtitle.Position = UDim2.new(0, 48, 0, 26)
+subtitle.BackgroundTransparency = 1
+subtitle.Text = "v2 • FE OFF • TOUCH"
+subtitle.TextColor3 = Color3.fromRGB(140, 100, 200)
+subtitle.Font = Enum.Font.Gotham
+subtitle.TextSize = 10
+subtitle.TextXAlignment = Enum.TextXAlignment.Left
+subtitle.Parent = titleBar
+
+-- Minimize butonu
+local minBtn = Instance.new("TextButton")
+minBtn.Size = UDim2.new(0, 24, 0, 24)
+minBtn.Position = UDim2.new(1, -60, 0, 12)
+minBtn.BackgroundColor3 = Color3.fromRGB(60, 40, 100)
+minBtn.BorderSizePixel = 0
+minBtn.Text = "−"
+minBtn.TextColor3 = Color3.fromRGB(220, 200, 255)
+minBtn.Font = Enum.Font.GothamBold
+minBtn.TextSize = 18
+minBtn.Parent = titleBar
+
+local minCorner = Instance.new("UICorner")
+minCorner.CornerRadius = UDim.new(0, 6)
+minCorner.Parent = minBtn
+
+-- Kapatma butonu
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 24, 0, 24)
+closeBtn.Position = UDim2.new(1, -32, 0, 12)
+closeBtn.BackgroundColor3 = Color3.fromRGB(120, 30, 60)
+closeBtn.BorderSizePixel = 0
+closeBtn.Text = "×"
+closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.TextSize = 18
+closeBtn.Parent = titleBar
+
+local closeCorner = Instance.new("UICorner")
+closeCorner.CornerRadius = UDim.new(0, 6)
+closeCorner.Parent = closeBtn
+
+-- Title alt çizgisi
+local titleLine = Instance.new("Frame")
+titleLine.Size = UDim2.new(1, -30, 0, 1)
+titleLine.Position = UDim2.new(0, 15, 0, 48)
+titleLine.BackgroundColor3 = Color3.fromRGB(140, 60, 255)
+titleLine.BorderSizePixel = 0
+titleLine.Parent = frame
+
+local lineGradient = Instance.new("UIGradient")
+lineGradient.Transparency = NumberSequence.new({
+    NumberSequenceKeypoint.new(0, 1),
+    NumberSequenceKeypoint.new(0.5, 0),
+    NumberSequenceKeypoint.new(1, 1),
+})
+lineGradient.Parent = titleLine
+
+-- ===== İÇERİK (minimize için grup) =====
+local content = Instance.new("Frame")
+content.Size = UDim2.new(1, 0, 1, -48)
+content.Position = UDim2.new(0, 0, 0, 48)
+content.BackgroundTransparency = 1
+content.Parent = frame
+
+-- TARGET LABEL
+local targetLabel = Instance.new("TextLabel")
+targetLabel.Size = UDim2.new(1, -30, 0, 16)
+targetLabel.Position = UDim2.new(0, 15, 0, 10)
+targetLabel.BackgroundTransparency = 1
+targetLabel.Text = "🎯 HEDEF"
+targetLabel.TextColor3 = Color3.fromRGB(180, 140, 240)
+targetLabel.Font = Enum.Font.GothamBold
+targetLabel.TextSize = 11
+targetLabel.TextXAlignment = Enum.TextXAlignment.Left
+targetLabel.Parent = content
+
+-- TARGET TEXTBOX
+local targetBox = Instance.new("TextBox")
+targetBox.Size = UDim2.new(1, -100, 0, 38)
+targetBox.Position = UDim2.new(0, 15, 0, 28)
+targetBox.BackgroundColor3 = Color3.fromRGB(30, 22, 50)
+targetBox.BorderSizePixel = 0
+targetBox.PlaceholderText = "Oyuncu adı / 'random'"
+targetBox.Text = ""
+targetBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+targetBox.PlaceholderColor3 = Color3.fromRGB(120, 100, 160)
+targetBox.Font = Enum.Font.GothamMedium
+targetBox.TextSize = 13
+targetBox.TextXAlignment = Enum.TextXAlignment.Left
+targetBox.ClearTextOnFocus = false
+targetBox.Parent = content
+
+local tbPadding = Instance.new("UIPadding")
+tbPadding.PaddingLeft = UDim.new(0, 12)
+tbPadding.Parent = targetBox
+
+local tbCorner = Instance.new("UICorner")
+tbCorner.CornerRadius = UDim.new(0, 8)
+tbCorner.Parent = targetBox
+
+local tbStroke = Instance.new("UIStroke")
+tbStroke.Color = Color3.fromRGB(90, 45, 170)
+tbStroke.Thickness = 1.5
+tbStroke.Parent = targetBox
+
+-- TOUCH BUTONU
+local touchBtn = Instance.new("TextButton")
+touchBtn.Size = UDim2.new(0, 70, 0, 38)
+touchBtn.Position = UDim2.new(1, -85, 0, 28)
+touchBtn.BackgroundColor3 = Color3.fromRGB(80, 40, 160)
+touchBtn.BorderSizePixel = 0
+touchBtn.Text = "👆 TIKLA"
+touchBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+touchBtn.Font = Enum.Font.GothamBold
+touchBtn.TextSize = 11
+touchBtn.Parent = content
+
+local touchCorner = Instance.new("UICorner")
+touchCorner.CornerRadius = UDim.new(0, 8)
+touchCorner.Parent = touchBtn
+
+-- INFO CARD
+local infoCard = Instance.new("Frame")
+infoCard.Size = UDim2.new(1, -30, 0, 72)
+infoCard.Position = UDim2.new(0, 15, 0, 76)
+infoCard.BackgroundColor3 = Color3.fromRGB(25, 18, 40)
+infoCard.BorderSizePixel = 0
+infoCard.Parent = content
+
+local infoCorner = Instance.new("UICorner")
+infoCorner.CornerRadius = UDim.new(0, 10)
+infoCorner.Parent = infoCard
+
+local infoStroke = Instance.new("UIStroke")
+infoStroke.Color = Color3.fromRGB(70, 40, 130)
+infoStroke.Thickness = 1
+infoStroke.Parent = infoCard
+
+local thumbFrame = Instance.new("Frame")
+thumbFrame.Size = UDim2.new(0, 54, 0, 54)
+thumbFrame.Position = UDim2.new(0, 9, 0.5, -27)
+thumbFrame.BackgroundColor3 = Color3.fromRGB(40, 30, 65)
+thumbFrame.BorderSizePixel = 0
+thumbFrame.Parent = infoCard
+
+local thumbCorner = Instance.new("UICorner")
+thumbCorner.CornerRadius = UDim.new(0, 8)
+thumbCorner.Parent = thumbFrame
+
+local thumb = Instance.new("ImageLabel")
+thumb.Size = UDim2.new(1, -4, 1, -4)
+thumb.Position = UDim2.new(0, 2, 0, 2)
+thumb.BackgroundTransparency = 1
+thumb.Image = ""
+thumb.Parent = thumbFrame
+
+local thumbImgCorner = Instance.new("UICorner")
+thumbImgCorner.CornerRadius = UDim.new(0, 6)
+thumbImgCorner.Parent = thumb
+
+local nameLbl = Instance.new("TextLabel")
+nameLbl.Size = UDim2.new(1, -80, 0, 20)
+nameLbl.Position = UDim2.new(0, 73, 0, 14)
+nameLbl.BackgroundTransparency = 1
+nameLbl.Text = "— hedef seçilmedi —"
+nameLbl.TextColor3 = Color3.fromRGB(220, 200, 255)
+nameLbl.Font = Enum.Font.GothamBold
+nameLbl.TextSize = 13
+nameLbl.TextXAlignment = Enum.TextXAlignment.Left
+nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
+nameLbl.Parent = infoCard
+
+local statusDot = Instance.new("Frame")
+statusDot.Size = UDim2.new(0, 8, 0, 8)
+statusDot.Position = UDim2.new(0, 73, 0, 42)
+statusDot.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
+statusDot.BorderSizePixel = 0
+statusDot.Parent = infoCard
+
+local dotCorner = Instance.new("UICorner")
+dotCorner.CornerRadius = UDim.new(1, 0)
+dotCorner.Parent = statusDot
+
+local statusText = Instance.new("TextLabel")
+statusText.Size = UDim2.new(1, -90, 0, 14)
+statusText.Position = UDim2.new(0, 87, 0, 39)
+statusText.BackgroundTransparency = 1
+statusText.Text = "Hedef yok"
+statusText.TextColor3 = Color3.fromRGB(180, 160, 220)
+statusText.Font = Enum.Font.Gotham
+statusText.TextSize = 11
+statusText.TextXAlignment = Enum.TextXAlignment.Left
+statusText.Parent = infoCard
+
+-- KILL BUTONU
+local killBtn = Instance.new("TextButton")
+killBtn.Size = UDim2.new(1, -30, 0, 64)
+killBtn.Position = UDim2.new(0, 15, 0, 158)
+killBtn.BackgroundColor3 = Color3.fromRGB(200, 20, 50)
+killBtn.BorderSizePixel = 0
+killBtn.Text = ""
+killBtn.AutoButtonColor = false
+killBtn.ClipsDescendants = true
+killBtn.Parent = content
+
+local killCorner = Instance.new("UICorner")
+killCorner.CornerRadius = UDim.new(0, 12)
+killCorner.Parent = killBtn
+
+local killGradient = Instance.new("UIGradient")
+killGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 60, 100)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(180, 10, 40)),
+})
+killGradient.Rotation = 90
+killGradient.Parent = killBtn
+
+local killStroke = Instance.new("UIStroke")
+killStroke.Color = Color3.fromRGB(255, 100, 140)
+killStroke.Thickness = 2
+killStroke.Transparency = 0.3
+killStroke.Parent = killBtn
+
+local killText = Instance.new("TextLabel")
+killText.Size = UDim2.new(1, 0, 1, 0)
+killText.BackgroundTransparency = 1
+killText.Text = "⚔️  KILL  ⚔️"
+killText.TextColor3 = Color3.fromRGB(255, 255, 255)
+killText.Font = Enum.Font.GothamBlack
+killText.TextSize = 20
+killText.ZIndex = 2
+killText.Parent = killBtn
+
+-- VERSION BUTONLARI
+local versionRow = Instance.new("Frame")
+versionRow.Size = UDim2.new(1, -30, 0, 32)
+versionRow.Position = UDim2.new(0, 15, 0, 232)
+versionRow.BackgroundTransparency = 1
+versionRow.Parent = content
+
+local vBtn1 = Instance.new("TextButton")
+vBtn1.Size = UDim2.new(0.48, 0, 1, 0)
+vBtn1.Position = UDim2.new(0, 0, 0, 0)
+vBtn1.BackgroundColor3 = Color3.fromRGB(80, 40, 160)
+vBtn1.BorderSizePixel = 0
+vBtn1.Text = "v3.1 Physics"
+vBtn1.TextColor3 = Color3.fromRGB(255, 255, 255)
+vBtn1.Font = Enum.Font.GothamBold
+vBtn1.TextSize = 12
+vBtn1.Parent = versionRow
+
+local v1c = Instance.new("UICorner")
+v1c.CornerRadius = UDim.new(0, 8)
+v1c.Parent = vBtn1
+
+local vBtn2 = Instance.new("TextButton")
+vBtn2.Size = UDim2.new(0.48, 0, 1, 0)
+vBtn2.Position = UDim2.new(0.52, 0, 0, 0)
+vBtn2.BackgroundColor3 = Color3.fromRGB(50, 30, 90)
+vBtn2.BorderSizePixel = 0
+vBtn2.Text = "v3.2 Touch"
+vBtn2.TextColor3 = Color3.fromRGB(180, 160, 220)
+vBtn2.Font = Enum.Font.GothamBold
+vBtn2.TextSize = 12
+vBtn2.Parent = versionRow
+
+local v2c = Instance.new("UICorner")
+v2c.CornerRadius = UDim.new(0, 8)
+v2c.Parent = vBtn2
+
+-- STATUS BAR
+local statusBar = Instance.new("Frame")
+statusBar.Size = UDim2.new(1, -30, 0, 44)
+statusBar.Position = UDim2.new(0, 15, 1, -54)
+statusBar.BackgroundColor3 = Color3.fromRGB(20, 15, 35)
+statusBar.BorderSizePixel = 0
+statusBar.Parent = content
+
+local sbCorner = Instance.new("UICorner")
+sbCorner.CornerRadius = UDim.new(0, 8)
+sbCorner.Parent = statusBar
+
+local sbStroke = Instance.new("UIStroke")
+sbStroke.Color = Color3.fromRGB(70, 40, 130)
+sbStroke.Thickness = 1
+sbStroke.Parent = statusBar
+
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Size = UDim2.new(1, -20, 0, 24)
+statusLabel.Position = UDim2.new(0, 10, 0, 2)
+statusLabel.BackgroundTransparency = 1
+statusLabel.Text = "✨ Hazır"
+statusLabel.TextColor3 = Color3.fromRGB(120, 255, 150)
+statusLabel.Font = Enum.Font.GothamMedium
+statusLabel.TextSize = 12
+statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+statusLabel.Parent = statusBar
+
+local loadingBar = Instance.new("Frame")
+loadingBar.Size = UDim2.new(0, 0, 0, 3)
+loadingBar.Position = UDim2.new(0, 10, 1, -8)
+loadingBar.BackgroundColor3 = Color3.fromRGB(140, 60, 255)
+loadingBar.BorderSizePixel = 0
+loadingBar.Parent = statusBar
+
+local lbCorner = Instance.new("UICorner")
+lbCorner.CornerRadius = UDim.new(0, 2)
+lbCorner.Parent = loadingBar
+
+-- ==================== MANUEL DRAG (bug fix) ====================
+local function onDragStart(input)
+    if input.UserInputType ~= Enum.UserInputType.MouseButton1 
+       and input.UserInputType ~= Enum.UserInputType.Touch then return end
+    local pos = input.Position
+    local framePos = frame.AbsolutePosition
+    if pos.Y - framePos.Y <= 48 then
+        State.isDragging = true
+        State.dragStart = Vector2.new(pos.X, pos.Y)
+        State.frameStart = UDim2.new(frame.Position.X.Scale, frame.Position.X.Offset,
+                                      frame.Position.Y.Scale, frame.Position.Y.Offset)
+    end
+end
+
+local function onDragMove(input)
+    if not State.isDragging then return end
+    local pos = input.Position
+    local delta = Vector2.new(pos.X - State.dragStart.X, pos.Y - State.dragStart.Y)
+    frame.Position = UDim2.new(
+        State.frameStart.X.Scale, State.frameStart.X.Offset + delta.X,
+        State.frameStart.Y.Scale, State.frameStart.Y.Offset + delta.Y
+    )
+end
+
+local function onDragEnd(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 
+       or input.UserInputType == Enum.UserInputType.Touch then
+        State.isDragging = false
+    end
+end
+
+titleBar.InputBegan:Connect(onDragStart)
+UserInputService.InputChanged:Connect(onDragMove)
+UserInputService.InputEnded:Connect(onDragEnd)
+
+-- ==================== ANİMASYONLAR ====================
+-- Stroke pulse
+task.spawn(function()
+    while frame.Parent do
+        if not State.strokeAnimating then
+            State.strokeAnimating = true
+            TweenService:Create(stroke, TweenInfo.new(1.5, Enum.EasingStyle.Sine), {
+                Color = Color3.fromRGB(200, 100, 255),
+                Thickness = 3
+            }):Play()
+            TweenService:Create(shadow, TweenInfo.new(1.5, Enum.EasingStyle.Sine), {
+                ImageTransparency = 0.3
+            }):Play()
+            task.wait(1.5)
+            TweenService:Create(stroke, TweenInfo.new(1.5, Enum.EasingStyle.Sine), {
+                Color = Color3.fromRGB(100, 40, 200),
+                Thickness = 2
+            }):Play()
+            TweenService:Create(shadow, TweenInfo.new(1.5, Enum.EasingStyle.Sine), {
+                ImageTransparency = 0.6
+            }):Play()
+            task.wait(1.5)
+            State.strokeAnimating = false
+        else
+            task.wait(0.5)
+        end
+    end
+end)
+
+-- Gradient rotation
+task.spawn(function()
+    while frame.Parent do
+        gradient.Rotation = (gradient.Rotation + 1) % 360
+        lineGradient.Rotation = (lineGradient.Rotation + 1) % 360
+        task.wait(0.05)
+    end
+end)
+
+-- Status dot pulse (SADECE hedef yoksa)
+task.spawn(function()
+    while frame.Parent do
+        task.wait(0.8)
+        if not State.currentTarget then
+            TweenService:Create(statusDot, TweenInfo.new(0.8, Enum.EasingStyle.Sine), {
+                BackgroundColor3 = Color3.fromRGB(255, 100, 100)
+            }):Play()
+            task.wait(0.8)
+            TweenService:Create(statusDot, TweenInfo.new(0.8, Enum.EasingStyle.Sine), {
+                BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+            }):Play()
+        end
+    end
+end)
+
+-- Açılış animasyonu
+frame.Size = UDim2.new(0, 0, 0, 0)
+frame.Position = UDim2.new(0.5, 0, 0.5, 0)
+TweenService:Create(frame, TweenInfo.new(0.6, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+    Size = UDim2.new(0, 340, 0, 420),
+    Position = UDim2.new(0.5, -170, 0.5, -210)
+}):Play()
+
+-- ==================== RIPPLE ====================
+local function createRipple(parent, x, y)
+    local ripple = Instance.new("Frame")
+    ripple.AnchorPoint = Vector2.new(0.5, 0.5)
+    ripple.Size = UDim2.new(0, 0, 0, 0)
+    ripple.Position = UDim2.new(0, x, 0, y)
+    ripple.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    ripple.BackgroundTransparency = 0.5
+    ripple.BorderSizePixel = 0
+    ripple.ZIndex = 5
+    ripple.Parent = parent
+    
+    local rCorner = Instance.new("UICorner")
+    rCorner.CornerRadius = UDim.new(1, 0)
+    rCorner.Parent = ripple
+    
+    TweenService:Create(ripple, TweenInfo.new(0.6, Enum.EasingStyle.Quad), {
+        Size = UDim2.new(0, 120, 0, 120),
+        BackgroundTransparency = 1
+    }):Play()
+    
+    task.delay(0.65, function() 
+        if ripple.Parent then ripple:Destroy() end 
+    end)
+end
+
+-- ==================== HOVER (sadece PC) ====================
+local isMobile = UserInputService.TouchEnabled and not UserInputService.MouseEnabled
+
+local function addHover(btn, hoverColor, normalColor)
+    if isMobile then return end
+    btn.MouseEnter:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.2), {
+            BackgroundColor3 = hoverColor
+        }):Play()
+    end)
+    btn.MouseLeave:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.2), {
+            BackgroundColor3 = normalColor
+        }):Play()
+    end)
+end
+
+addHover(killBtn, Color3.fromRGB(255, 40, 80), Color3.fromRGB(200, 20, 50))
+addHover(touchBtn, Color3.fromRGB(120, 60, 220), Color3.fromRGB(80, 40, 160))
+addHover(vBtn1, Color3.fromRGB(120, 60, 220), Color3.fromRGB(80, 40, 160))
+addHover(vBtn2, Color3.fromRGB(80, 50, 140), Color3.fromRGB(50, 30, 90))
+addHover(minBtn, Color3.fromRGB(90, 60, 140), Color3.fromRGB(60, 40, 100))
+addHover(closeBtn, Color3.fromRGB(180, 40, 80), Color3.fromRGB(120, 30, 60))
+
+-- ==================== FONKSİYONLAR ====================
+
+-- Bilgi kartını güncelle
+local function updateInfoCard(player)
+    if player then
+        State.currentTarget = player
+        nameLbl.Text = player.DisplayName .. "  (@" .. player.Name .. ")"
+        statusText.Text = "✅ Hedef: " .. player.Name
+        statusText.TextColor3 = Color3.fromRGB(120, 255, 150)
+        statusDot.BackgroundColor3 = Color3.fromRGB(120, 255, 150)
+        pcall(function()
+            thumb.Image = Players:GetUserThumbnailAsync(
+                player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size420x420)
+        end)
+        if player.Character then
+            highlightCharacter(player.Character, Color3.fromRGB(255, 50, 100))
+        end
+    else
+        State.currentTarget = nil
+        nameLbl.Text = "— hedef seçilmedi —"
+        statusText.Text = "Hedef yok"
+        statusText.TextColor3 = Color3.fromRGB(180, 160, 220)
+        statusDot.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
+        thumb.Image = ""
+        clearHighlight()
+    end
+end
+
+-- ==================== KAPATMA / MİNİMİZE ====================
+closeBtn.MouseButton1Click:Connect(function()
+    TweenService:Create(frame, TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {
+        Size = UDim2.new(0, 0, 0, 0),
+        Position = UDim2.new(frame.Position.X.Scale, frame.Position.X.Offset + 170,
+                             frame.Position.Y.Scale, frame.Position.Y.Offset + 210),
+        BackgroundTransparency = 1
+    }):Play()
+    Notify("Kapatıldı", "KAIOD Ultra kapatıldı", "info", 2)
+    task.wait(0.35)
+    clearHighlight()
+    gui:Destroy()
+end)
+
+local minimizedFullSize = UDim2.new(0, 340, 0, 420)
+minBtn.MouseButton1Click:Connect(function()
+    if State.minimized then
+        TweenService:Create(frame, TweenInfo.new(0.35, Enum.EasingStyle.Quart), {
+            Size = minimizedFullSize
+        }):Play()
+        task.wait(0.15)
+        content.Visible = true
+        State.minimized = false
+        minBtn.Text = "−"
+    else
+        TweenService:Create(frame, TweenInfo.new(0.35, Enum.EasingStyle.Quart), {
+            Size = UDim2.new(0, 340, 0, 48)
+        }):Play()
+        task.wait(0.15)
+        content.Visible = false
+        State.minimized = true
+        minBtn.Text = "+"
+    end
+end)
+
+-- ==================== TOUCH TARGET ====================
+touchBtn.MouseButton1Click:Connect(function()
+    State.touchMode = not State.touchMode
+    
+    if State.touchMode then
+        touchBtn.BackgroundColor3 = Color3.fromRGB(255, 100, 50)
+        touchBtn.Text = "❌ İPTAL"
+        statusLabel.Text = "👆 Bir oyuncuya tıkla"
+        statusLabel.TextColor3 = Color3.fromRGB(255, 200, 80)
+        Notify("Touch Mode", "Bir oyuncuya dokun/tıkla", "warning", 2)
+    else
+        touchBtn.BackgroundColor3 = Color3.fromRGB(80, 40, 160)
+        touchBtn.Text = "👆 TIKLA"
+        statusLabel.Text = "✨ Hazır"
+        statusLabel.TextColor3 = Color3.fromRGB(120, 255, 150)
+    end
+end)
+
+-- Oyuncu seç (raycast) - TOUCH + MOUSE
+local function trySelectPlayer(screenPos)
+    local cam = workspace.CurrentCamera
+    local ray = cam:ViewportPointToRay(screenPos.X, screenPos.Y)
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    local filter = {gui}
+    if plr.Character then table.insert(filter, plr.Character) end
+    params.FilterDescendantsInstances = filter
+    
+    local result = workspace:Raycast(ray.Origin, ray.Direction * 2000, params)
+    if result and result.Instance then
+        local hitChar = result.Instance:FindFirstAncestorOfClass("Model")
+        if hitChar then
+            local hitPlayer = Players:GetPlayerFromCharacter(hitChar)
+            if hitPlayer and hitPlayer ~= plr then
+                targetBox.Text = hitPlayer.Name
+                updateInfoCard(hitPlayer)
+                Notify("Hedef Seçildi", hitPlayer.DisplayName, "success", 2)
+                
+                State.touchMode = false
+                touchBtn.BackgroundColor3 = Color3.fromRGB(80, 40, 160)
+                touchBtn.Text = "👆 TIKLA"
+                statusLabel.Text = "🎯 Hedef seçildi!"
+                statusLabel.TextColor3 = Color3.fromRGB(120, 255, 150)
+                return true
+            end
+        end
+    end
+    return false
+end
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if not State.touchMode then return end
+    if State.isDragging then return end
+    
+    local isTap = input.UserInputType == Enum.UserInputType.MouseButton1 
+                or input.UserInputType == Enum.UserInputType.Touch
+    if not isTap then return end
+    
+    local pos
+    if input.UserInputType == Enum.UserInputType.Touch then
+        pos = Vector2.new(input.Position.X, input.Position.Y)
+    else
+        pos = UserInputService:GetMouseLocation()
+    end
+    
+    trySelectPlayer(pos)
+end)
+
+-- Highlight takip
+task.spawn(function()
+    while gui.Parent do
+        task.wait(0.5)
+        if State.touchMode then
+            -- Touch modunda mor highlight
+            local user = FindPlayer(targetBox.Text)
+            if user and user.Character then
+                highlightCharacter(user.Character, Color3.fromRGB(140, 60, 255))
+            end
+        elseif State.currentTarget then
+            -- Normalde hedefin karakterini takip et
+            local char = State.currentTarget.Character
+            if char and char.Parent then
+                if not State.highlight or State.highlight.Parent ~= char then
+                    highlightCharacter(char, Color3.fromRGB(255, 50, 100))
+                end
+            else
+                clearHighlight()
+            end
+        end
+    end
+end)
+
+-- ==================== TARGET BOX ====================
+targetBox.Focused:Connect(function()
+    TweenService:Create(tbStroke, TweenInfo.new(0.3), {
+        Color = Color3.fromRGB(180, 90, 255),
+        Thickness = 2
+    }):Play()
+    while targetBox:IsFocused() and task.wait(0.3) do
+        local user = FindPlayer(targetBox.Text)
+        if user then
+            updateInfoCard(user)
+        else
+            if targetBox.Text ~= "" then
+                nameLbl.Text = "— not found —"
+                thumb.Image = ""
+                clearHighlight()
+                State.currentTarget = nil
+            end
+        end
+    end
+end)
+
+targetBox.FocusLost:Connect(function()
+    TweenService:Create(tbStroke, TweenInfo.new(0.3), {
+        Color = Color3.fromRGB(90, 45, 170),
+        Thickness = 1.5
+    }):Play()
+end)
+
+-- ==================== VERSION BUTONLARI ====================
+vBtn1.MouseButton1Click:Connect(function()
+    vBtn1.BackgroundColor3 = Color3.fromRGB(80, 40, 160)
+    vBtn1.TextColor3 = Color3.fromRGB(255, 255, 255)
+    vBtn2.BackgroundColor3 = Color3.fromRGB(50, 30, 90)
+    vBtn2.TextColor3 = Color3.fromRGB(180, 160, 220)
+    statusLabel.Text = "📌 v3.1 Physics"
+    statusLabel.TextColor3 = Color3.fromRGB(180, 140, 255)
+    Notify("Version", "v3.1 Physics aktif", "info", 2)
+end)
+
+vBtn2.MouseButton1Click:Connect(function()
+    vBtn2.BackgroundColor3 = Color3.fromRGB(80, 40, 160)
+    vBtn2.TextColor3 = Color3.fromRGB(255, 255, 255)
+    vBtn1.BackgroundColor3 = Color3.fromRGB(50, 30, 90)
+    vBtn1.TextColor3 = Color3.fromRGB(180, 160, 220)
+    statusLabel.Text = "📌 v3.2 Touch"
+    statusLabel.TextColor3 = Color3.fromRGB(180, 140, 255)
+    Notify("Version", "v3.2 Touch aktif", "info", 2)
+end)
+
+-- ==================== KILL ====================
+killBtn.MouseButton1Click:Connect(function()
+    if State.busy then
+        Notify("Bekle", "Zaten işlem yapılıyor", "warning", 1.5)
+        return
+    end
+    
+    -- Ripple
+    local mp = UserInputService:GetMouseLocation()
+    if isMobile then
+        mp = Vector2.new(killBtn.AbsolutePosition.X + killBtn.AbsoluteSize.X/2,
+                         killBtn.AbsolutePosition.Y + killBtn.AbsoluteSize.Y/2)
+    end
+    local relX = mp.X - killBtn.AbsolutePosition.X
+    local relY = mp.Y - killBtn.AbsolutePosition.Y
+    createRipple(killBtn, relX, relY)
+    
+    -- Animasyon
+    TweenService:Create(killBtn, TweenInfo.new(0.1), {
+        Size = UDim2.new(1, -40, 0, 58)
+    }):Play()
+    task.wait(0.1)
+    TweenService:Create(killBtn, TweenInfo.new(0.3, Enum.EasingStyle.Back), {
+        Size = UDim2.new(1, -30, 0, 64)
+    }):Play()
+    
+    killText.Text = "💀  ATEŞ!  💀"
+    task.wait(0.2)
+    
+    local targetPlayer = State.currentTarget or FindPlayer(targetBox.Text)
+    if not targetPlayer then
+        Notify("Hata", "Hedef bulunamadı!", "error", 2.5)
+        statusLabel.Text = "❌ Hedef bulunamadı!"
+        statusLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+        killText.Text = "❌  HATA  ❌"
+        task.wait(1.2)
+        killText.Text = "⚔️  KILL  ⚔️"
+        statusLabel.Text = "✨ Hazır"
+        statusLabel.TextColor3 = Color3.fromRGB(120, 255, 150)
+        return
+    end
+    
+    State.busy = true
+    statusLabel.Text = "⚔️ Saldırıyor..."
+    statusLabel.TextColor3 = Color3.fromRGB(255, 200, 80)
+    statusDot.BackgroundColor3 = Color3.fromRGB(255, 200, 80)
+    Notify("Saldırı", targetPlayer.DisplayName .. " hedefleniyor", "kill", 2)
+    
+    local starta, targetRoot, myRoot = beginAttack(targetPlayer)
+    
+    if not starta then
+        State.busy = false
+        Notify("Başarısız", "Saldırı gerçekleştirilemedi", "error", 2.5)
+        statusLabel.Text = "❌ Saldırı başarısız"
+        statusLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+        killText.Text = "❌  BAŞARISIZ  ❌"
+        task.wait(1.2)
+        killText.Text = "⚔️  KILL  ⚔️"
+        statusLabel.Text = "✨ Hazır"
+        statusLabel.TextColor3 = Color3.fromRGB(120, 255, 150)
+        return
+    end
+    
+    killText.Text = "💀  YOK EDİLİYOR  💀"
+    
+    local voidY = workspace.FallenPartsDestroyHeight + 2
+    for i = 1, 30 do
+        if not (targetRoot and targetRoot.Parent) then break end
+        if not (myRoot and myRoot.Parent) then break end
+        
+        pcall(function()
+            myRoot.CFrame = targetRoot.CFrame * CFrame.new(0, 2, 0)
+            targetRoot.CFrame = CFrame.new(targetRoot.Position.X, voidY, targetRoot.Position.Z)
+            targetRoot.AssemblyLinearVelocity = Vector3.zero
+            targetRoot.AssemblyAngularVelocity = Vector3.zero
+        end)
+        
+        -- Loading bar (düzgün hesap)
+        local progress = i / 30
+        loadingBar.Size = UDim2.new(progress * (1 - 0.05), -10, 0, 3)
+        task.wait(0.01)
+    end
+    
+    task.wait(1)
+    sendChat("-re")
+    task.wait(1)
+    
+    if myRoot and myRoot.Parent then
+        pcall(function() myRoot.CFrame = starta end)
+    end
+    
+    TweenService:Create(loadingBar, TweenInfo.new(0.3), {
+        Size = UDim2.new(0, 0, 0, 3)
+    }):Play()
+    
+    killText.Text = "✅  YOK EDİLDİ  ✅"
+    statusLabel.Text = "✅ " .. targetPlayer.Name .. " öldürüldü"
+    statusLabel.TextColor3 = Color3.fromRGB(120, 255, 150)
+    statusDot.BackgroundColor3 = Color3.fromRGB(120, 255, 150)
+    statusText.Text = "Başarılı!"
+    
+    Notify("Başarılı", targetPlayer.DisplayName .. " yok edildi!", "success", 3)
+    
+    task.wait(1.5)
+    killText.Text = "⚔️  KILL  ⚔️"
+    statusLabel.Text = "✨ Hazır"
+    statusLabel.TextColor3 = Color3.fromRGB(120, 255, 150)
+    State.busy = false
+end)
+
+-- ==================== HOŞGELDİN ====================
+task.wait(0.5)
+Notify("KAIOD Ultra", "v2 başarıyla yüklendi!", "success", 3)
+task.delay(0.8, function()
+    Notify("İpucu", "👆 TIKLA ile hedef seçebilirsin", "info", 3.5)
+end)
+
+print("[KAIOD ULTRA v2] Yüklendi ✅")
